@@ -15,7 +15,10 @@ class Window(Stateful):
 		def rightClick(self):
 			pass
 
-Window().rightClick()
+window = Window()
+window.rightClick()
+window.state = window.InactiveState
+window.rightClick()
 ```
 
 Note that the first argument of *rightClick* is named *self* here, but it’s not the instance of *ActiveState* or *InactiveState*. In fact it’s the instance of *Window*, and subclasses of *State* cannot be instantiated at all. You may name it *owner* or something to avoid confusion, but I think *self* is a more practical name. 
