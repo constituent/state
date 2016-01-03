@@ -1,5 +1,6 @@
 state
 =====
+Module to facilitate the use of state design pattern in python.  
 Require: python 3.4+
 ##Basic usage: 
 ```python
