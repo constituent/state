@@ -10,12 +10,22 @@ from functools import partial
 
 __all__ = ['State', 'stateful', 'Stateful']
 
+class behavior():
+	def __init__(self, func):
+		self.func = func
+	def __get__(self, instance, owner=None):
+		if instance is None:
+			return self
+		else:
+			return partial(self.func, instance)
+	def __call__(self, *args, **kwargs):
+		return self.func(*args, **kwargs)
 
 class StateMeta(type): 
 	def __new__(cls, name, bases, namespace): 
 		for k, v in namespace.items(): 
 			if inspect.isfunction(v): 
-				namespace[k] = staticmethod(v)
+				namespace[k] = behavior(v)
 		return type.__new__(cls, name, bases, namespace)
 
 	def __call__(self, *args, **kwargs): 
@@ -58,18 +68,21 @@ def stateful(cls=None, *, externalStates=None, defaultState=None):
 	cls.state = state
 	cls.switch_state = switch_state
 
-	
+
 	def find_defaults(cls, derivedStates): 
 		defaults = []
+		# 既处理了不存在__defaultState的情况，也不会从父类那得到__defaultState（对cls.__defaultState赋值不会自动在前面加上_classname）
+		defaultState = cls.__dict__.get('__defaultState')
 		for value in cls.__dict__.values(): 
 			if inspect.isclass(value) and issubclass(value, State) and value.__name__ not in derivedStates: 
 				derivedStates.append(value.__name__)
 
 				# Don't search default in base classes
 				# Searching default is necessary only for final class whose __defaultState is not determined
-				if (value.__dict__.get('default') or value == cls.__defaultState): 
+				if (value.__dict__.get('default') or value == defaultState): 
 					defaults.append(value)
 		return defaults
+
 	derivedStates = []
 	defaults = find_defaults(cls, derivedStates)
 	if defaultState is not None: 
@@ -79,10 +92,7 @@ def stateful(cls=None, *, externalStates=None, defaultState=None):
 	if len(defaults) == 0: 
 		mro_iter = iter(cls.__mro__)
 		next(mro_iter)# skip cls self
-		while True: 
-			base_cls = next(mro_iter)
-			if base_cls in (object, Stateful): 
-				break
+		for base_cls in mro_iter:
 			defaults = find_defaults(base_cls, derivedStates)
 			if len(defaults) > 0: 
 				break
@@ -136,7 +146,24 @@ def stateful(cls=None, *, externalStates=None, defaultState=None):
 					raise
 		try: 
 			if self.__class__ == cls and name != '__state': 
-				return partial(getattr(self.__state, name), self)
+				# __dict__无法查询父类
+				# getattr对于类方法和静态方法拿不到原始object
+				# value = self.__state.__dict__[name]
+				# value = getattr(self.__state, name)
+				for state_cls in self.__state.__mro__:
+					try:
+						value = state_cls.__dict__[name]
+					except KeyError:
+						continue
+					else:
+						break
+				else:
+					raise AttributeError
+
+				if isinstance(value, (behavior, property, classmethod, staticmethod)):
+					return value.__get__(self)
+				else:
+					return value
 			else: 
 				raise AttributeError("'{}' object has no attribute '{}'".format(self.__class__.__name__, name))
 		except AttributeError: 
@@ -156,7 +183,7 @@ class StatefulMeta(type):
 		type.__init__(self, name, bases, namespace)
 		stateful(self, **kwds)
 
-class Stateful(metaclass=StatefulMeta, externalStates=[State], defaultState=State): 
+class Stateful(metaclass=StatefulMeta): 
 	pass
 
 
@@ -263,5 +290,19 @@ if __name__ == '__main__':
 					print('Worker_ clear')
 		worker = Worker_()
 		worker.run()
+	def example3():
+		class X(Stateful):
+			class A(State):
+				default = True
+				def processOther(self):
+					print('xx')
+			class B(State):
+				pass
+			B.processOther = A.processOther
+		x = X()
+		x.processOther()
+		x.state = X.B
+		x.processOther()
 	example1()
 	example2()
+	example3()
